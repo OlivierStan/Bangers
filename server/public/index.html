@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aux Battle - Guest Phone</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { background: #121212; color: #fff; margin: 0; padding: 20px; text-align: center; }
+    h1 { color: #1DB954; font-size: 1.8rem; margin-bottom: 5px; }
+    p { color: #b3b3b3; font-size: 0.9rem; }
+    input { width: 100%; padding: 14px; border-radius: 8px; border: none; font-size: 1rem; margin-top: 15px; }
+    .song-list { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+    .song-card { display: flex; align-items: center; background: #181818; padding: 10px; border-radius: 8px; cursor: pointer; text-align: left; }
+    .song-card img { width: 50px; height: 50px; border-radius: 4px; margin-right: 12px; }
+    .song-info { flex: 1; overflow: hidden; }
+    .song-title { font-weight: bold; font-size: 0.95rem; }
+    .song-artist { color: #b3b3b3; font-size: 0.8rem; }
+    
+    /* Voting Buttons */
+    .vote-container { display: none; flex-direction: column; gap: 15px; margin-top: 25px; }
+    .btn-vote { padding: 20px; font-size: 1.2rem; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; color: white; }
+    .btn-a { background: #E91E63; }
+    .btn-b { background: #00BCD4; }
+    #status { margin-top: 20px; font-weight: bold; color: #1DB954; }
+  </style>
+</head>
+<body>
+
+  <h1>Bangers</h1>
+  <p id="promptText">Search and submit a song for the next battle!</p>
+
+  <!-- Submission View -->
+  <div id="submissionView">
+    <input type="text" id="searchInput" placeholder="Search song or artist..." />
+    <div id="results" class="song-list"></div>
+  </div>
+
+  <!-- Voting View -->
+  <div id="voteView" class="vote-container">
+    <button class="btn-vote btn-a" onclick="castVote('A')">Vote Song A</button>
+    <button class="btn-vote btn-b" onclick="castVote('B')">Vote Song B</button>
+  </div>
+
+  <div id="status"></div>
+
+  <script>
+    const socket = io();
+    const searchInput = document.getElementById('searchInput');
+    const resultsContainer = document.getElementById('results');
+    const statusDiv = document.getElementById('status');
+    const submissionView = document.getElementById('submissionView');
+    const voteView = document.getElementById('voteView');
+
+    let timeout = null;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(timeout);
+      const query = searchInput.value.trim();
+      if (query.length < 2) return;
+      timeout = setTimeout(() => socket.emit('search-song', { query }), 300);
+    });
+
+    socket.on('search-results', (tracks) => {
+      resultsContainer.innerHTML = '';
+      tracks.forEach(track => {
+        const card = document.createElement('div');
+        card.className = 'song-card';
+        card.innerHTML = `
+          <img src="${track.albumArt || ''}" />
+          <div class="song-info">
+            <div class="song-title">${track.name}</div>
+            <div class="song-artist">${track.artist}</div>
+          </div>
+        `;
+        card.onclick = () => selectSong(track);
+        resultsContainer.appendChild(card);
+      });
+    });
+
+    function selectSong(track) {
+      socket.emit('submit-song', track);
+      resultsContainer.innerHTML = '';
+      searchInput.value = '';
+      statusDiv.innerText = `Submitted: ${track.name}! Waiting for opponent...`;
+    }
+
+    // Switch to Voting Mode when server triggers battle
+    socket.on('start-battle', (data) => {
+      submissionView.style.display = 'none';
+      voteView.style.display = 'flex';
+      statusDiv.innerText = 'Battle is Live! Choose your favorite:';
+    });
+
+    function castVote(option) {
+      socket.emit('cast-vote', option);
+      voteView.style.display = 'none';
+      statusDiv.innerText = `Vote cast for Song ${option}! Watch the main screen.`;
+    }
+  </script>
+</body>
+</html>
