@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Aux Battle - Main Screen</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- Load Three.js via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    body { margin: 0; background: #121212; color: #fff; font-family: sans-serif; overflow: hidden; }
+    #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
+    #ui-overlay { position: relative; z-index: 2; text-align: center; padding: 40px; pointer-events: none; }
+    button { pointer-events: auto; padding: 12px 24px; font-size: 1rem; cursor: pointer; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  
+  <div id="ui-overlay">
+    <h1 id="promptDisplay">Waiting for Host to Start...</h1>
+    <div id="status"></div>
+    <button id="startBtn" onclick="startGame()">Start Game</button>
+    <button id="voteBtn" class="hidden" onclick="startVoting()">Proceed to Voting</button>
+    <button id="endVoteBtn" class="hidden" onclick="endVoting()">Show Results</button>
+<button id="nextRoundBtn" class="hidden" onclick="startGame()">Next Round</button>
+  </div>
+
+  <script src="https://sdk.scdn.co/spotify-player.js"></script>
+  <script>
+    const socket = io();
+
+    // --- THREE.JS BACKGROUND SCENE SETUP ---
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    container.appendChild(renderer.domElement);
+
+    // Add a glowing 3D Cylinder (Vinyl Record metaphor)
+    const geometry = new THREE.CylinderGeometry(3, 3, 0.2, 32);
+    const material = new THREE.MeshBasicMaterial({ color: 0x1DB954, wireframe: true });
+    const recordMesh = new THREE.Mesh(geometry, material);
+    scene.add(recordMesh);
+
+    camera.position.z = 7;
+    recordMesh.rotation.x = 0.5;
+
+    // Animation Loop
+    function animate() {
+      requestAnimationFrame(animate);
+      recordMesh.rotation.y += 0.01; // Spin record
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Adjust on resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // --- GAME EVENT HANDLERS ---
+    function startGame() {
+      socket.emit('host-start-game');
+      document.getElementById('startBtn').classList.add('hidden');
+    }
+
+    function startVoting() {
+      socket.emit('host-start-voting');
+      document.getElementById('voteBtn').classList.add('hidden');
+    }
+
+    socket.on('round-started', (data) => {
+      document.getElementById('promptDisplay').innerText = data.prompt;
+      document.getElementById('status').innerText = "Players submitting songs...";
+    });
+
+    socket.on('submission-updated', (data) => {
+      document.getElementById('status').innerText = `${data.count} songs submitted!`;
+      if (data.count >= 2) {
+        document.getElementById('voteBtn').classList.remove('hidden');
+      }
+    });
+
+    socket.on('round-results', (data) => {
+      document.getElementById('promptDisplay').innerText = "Round Results!";
+      document.getElementById('status').innerText = "Scores updated on phones!";
+    });
+
+    function endVoting() {
+    socket.emit('host-end-voting');
+    document.getElementById('endVoteBtn').classList.add('hidden');
+  }
+
+  // Handle voting state on host
+  socket.on('start-voting', (data) => {
+    document.getElementById('status').innerText = "Players are voting...";
+    document.getElementById('endVoteBtn').classList.remove('hidden');
+  });
+
+  // Display results on host screen
+  socket.on('round-results', (data) => {
+    document.getElementById('promptDisplay').innerText = "Round Leaderboard";
+    
+    // Format leaderboard
+    let leaderText = "Scores:\n";
+    Object.values(data.scores).forEach(p => {
+      leaderText += `${p.name}: ${p.points} pts | `;
+    });
+    
+    document.getElementById('status').innerText = leaderText;
+    document.getElementById('nextRoundBtn').classList.remove('hidden');
+  });
+  </script>
+</body>
+</html>

@@ -10,26 +10,23 @@
     body { background: #121212; color: #fff; margin: 0; padding: 20px; text-align: center; }
     h1 { color: #1DB954; font-size: 1.8rem; margin-bottom: 5px; }
     p { color: #b3b3b3; font-size: 0.9rem; }
-    input { width: 100%; padding: 14px; border-radius: 8px; border: none; font-size: 1rem; margin-top: 15px; }
+    input { width: 100%; padding: 14px; border-radius: 8px; border: none; font-size: 1rem; margin-top: 15px; background: #222; color: #fff; }
     .song-list { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
     .song-card { display: flex; align-items: center; background: #181818; padding: 10px; border-radius: 8px; cursor: pointer; text-align: left; }
-    .song-card img { width: 50px; height: 50px; border-radius: 4px; margin-right: 12px; }
+    .song-card img { width: 50px; height: 50px; border-radius: 4px; margin-right: 12px; object-fit: cover; }
     .song-info { flex: 1; overflow: hidden; }
-    .song-title { font-weight: bold; font-size: 0.95rem; }
+    .song-title { font-weight: bold; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .song-artist { color: #b3b3b3; font-size: 0.8rem; }
     
-    /* Voting Buttons */
     .vote-container { display: none; flex-direction: column; gap: 15px; margin-top: 25px; }
-    .btn-vote { padding: 20px; font-size: 1.2rem; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; color: white; }
-    .btn-a { background: #E91E63; }
-    .btn-b { background: #00BCD4; }
+    .btn-vote { padding: 16px; font-size: 1rem; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; color: white; background: #1DB954; }
     #status { margin-top: 20px; font-weight: bold; color: #1DB954; }
   </style>
 </head>
 <body>
 
-  <h1>Bangers</h1>
-  <p id="promptText">Search and submit a song for the next battle!</p>
+  <h1>Aux Battle</h1>
+  <p id="promptText">Waiting for the game to start...</p>
 
   <!-- Submission View -->
   <div id="submissionView">
@@ -38,10 +35,7 @@
   </div>
 
   <!-- Voting View -->
-  <div id="voteView" class="vote-container">
-    <button class="btn-vote btn-a" onclick="castVote('A')">Vote Song A</button>
-    <button class="btn-vote btn-b" onclick="castVote('B')">Vote Song B</button>
-  </div>
+  <div id="voteView" class="vote-container"></div>
 
   <div id="status"></div>
 
@@ -53,21 +47,40 @@
     const submissionView = document.getElementById('submissionView');
     const voteView = document.getElementById('voteView');
 
+    // Register player name on connect
+    const playerName = prompt("Enter your name:") || "Player";
+    socket.emit('join-game', playerName);
+
+    // Search input listener with debouncing
     let timeout = null;
     searchInput.addEventListener('input', () => {
       clearTimeout(timeout);
       const query = searchInput.value.trim();
-      if (query.length < 2) return;
-      timeout = setTimeout(() => socket.emit('search-song', { query }), 300);
+      
+      if (query.length < 2) {
+        resultsContainer.innerHTML = '';
+        return;
+      }
+      
+      timeout = setTimeout(() => {
+        socket.emit('search-song', { query });
+      }, 300);
     });
 
+    // Render search results from server
     socket.on('search-results', (tracks) => {
       resultsContainer.innerHTML = '';
+      
+      if (!tracks || tracks.length === 0) {
+        resultsContainer.innerHTML = '<p>No songs found.</p>';
+        return;
+      }
+
       tracks.forEach(track => {
         const card = document.createElement('div');
         card.className = 'song-card';
         card.innerHTML = `
-          <img src="${track.albumArt || ''}" />
+          <img src="${track.albumArt || ''}" alt="cover" />
           <div class="song-info">
             <div class="song-title">${track.name}</div>
             <div class="song-artist">${track.artist}</div>
@@ -82,21 +95,39 @@
       socket.emit('submit-song', track);
       resultsContainer.innerHTML = '';
       searchInput.value = '';
-      statusDiv.innerText = `Submitted: ${track.name}! Waiting for opponent...`;
+      submissionView.style.display = 'none';
+      statusDiv.innerText = `Submitted: ${track.name}! Waiting for other players...`;
     }
 
-    // Switch to Voting Mode when server triggers battle
-    socket.on('start-battle', (data) => {
-      submissionView.style.display = 'none';
-      voteView.style.display = 'flex';
-      statusDiv.innerText = 'Battle is Live! Choose your favorite:';
+    // New Round Started
+    socket.on('round-started', (data) => {
+      document.getElementById('promptText').innerText = data.prompt;
+      submissionView.style.display = 'block';
+      voteView.style.display = 'none';
+      resultsContainer.innerHTML = '';
+      searchInput.value = '';
+      statusDiv.innerText = '';
     });
 
-    function castVote(option) {
-      socket.emit('cast-vote', option);
-      voteView.style.display = 'none';
-      statusDiv.innerText = `Vote cast for Song ${option}! Watch the main screen.`;
-    }
+    // Voting Phase Started
+    socket.on('start-voting', (data) => {
+      submissionView.style.display = 'none';
+      voteView.style.display = 'flex';
+      voteView.innerHTML = '';
+      statusDiv.innerText = 'Listen to the tracks and cast your vote!';
+
+      data.tracks.forEach((item) => {
+        const btn = document.createElement('button');
+        btn.className = 'btn-vote';
+        btn.innerText = `Vote for: ${item.track.name} (${item.track.artist})`;
+        btn.onclick = () => {
+          socket.emit('cast-vote', item.id);
+          voteView.style.display = 'none';
+          statusDiv.innerText = 'Vote locked in!';
+        };
+        voteView.appendChild(btn);
+      });
+    });
   </script>
 </body>
 </html>

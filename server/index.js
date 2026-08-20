@@ -1,29 +1,42 @@
 require('dotenv').config();
 const express = require('express');
-const http = require('http');
 const { Server } = require('socket.io');
 const axios = require('axios');
+const spotifyAuth = require('./spotifyAuth');
+const fs = require('fs');
+const https = require('https');
 
 const app = express();
 app.use(express.static('public'));
 
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
-
-let spotifyAccessToken = '';
-
-//In-memory Game State
-const room = {
-  code: "PARTY1",
-  state: "LOBBY", //LOBBY, PROMPT, VOTING, RESULTS
-  prompt: "Best song to start a party!",
-  submissions: [],
-  votes: { A: 0, B: 0 },
-  votedPlayers: new Set()
+const sslOptions = {
+  key: fs.readFileSync('./localhost+1-key.pem'),
+  cert: fs.readFileSync('./localhost+1.pem')
 };
 
-//Refresh Spotify Token
-async function refreshSpotifyToken() {
+const server = https.createServer(sslOptions, app);
+const io = new Server(server, { cors: { origin: "*" } });
+
+let clientCredentialsToken = '';
+let hostDeviceId = null;
+
+// In-memory Game State
+const room = {
+  code: "PARTY1",
+  state: "LOBBY", // LOBBY, SUBMISSION, VOTING, RESULTS
+  prompts: [
+    "Best song to start a party!",
+    "Song that makes you feel like a villain",
+    "Best late night drive track"
+  ],
+  currentPromptIndex: 0,
+  submissions: [], // [{ socketId, track }]
+  votes: {},       // { socketId: submissionIndex }
+  scores: {}       // { socketId: { name, points } }
+};
+
+// Refresh Client Credentials Token (Fallback)
+async function refreshClientCredentialsToken() {
   try {
     const response = await axios.post(
       'https://accounts.spotify.com/api/token',
@@ -37,58 +50,117 @@ async function refreshSpotifyToken() {
         }
       }
     );
-    spotifyAccessToken = response.data.access_token;
-    console.log('Spotify Access Token refreshed!');
+    clientCredentialsToken = response.data.access_token;
+    console.log('Client Credentials Token refreshed!');
   } catch (error) {
-    console.error('Error getting Spotify Token:', error.message);
+    console.error('Error getting Spotify Client Credentials Token:', error.response?.data || error.message);
   }
 }
 
-refreshSpotifyToken();
-setInterval(refreshSpotifyToken, 50 * 60 * 1000);
+refreshClientCredentialsToken();
+setInterval(refreshClientCredentialsToken, 50 * 60 * 1000);
 
-//Search Spotify Tracks
+// Search Spotify Tracks (With dynamic token resolution)
 async function searchSpotifyTrack(query) {
-  if (!spotifyAccessToken) return [];
+  let token = clientCredentialsToken;
+
+  // Try using the logged-in Host token first, fallback to client credentials
+  try {
+    if (spotifyAuth.isLoggedIn()) {
+      token = await spotifyAuth.refreshIfNeeded();
+    }
+  } catch (err) {
+    console.warn('Host token unavailable, using Client Credentials token for search.');
+  }
+
+  if (!token) {
+    console.error('Spotify Search Failed: No access token available.');
+    return [];
+  }
+
   try {
     const res = await axios.get(`https://api.spotify.com/v1/search`, {
-      headers: { Authorization: `Bearer ${spotifyAccessToken}` },
+      headers: { Authorization: `Bearer ${token}` },
       params: { q: query, type: 'track', limit: 5 }
     });
 
     return res.data.tracks.items.map(track => ({
       id: track.id,
       name: track.name,
-      artist: track.artists[0].name,
-      albumArt: track.album.images[0]?.url,
+      artist: track.artists[0]?.name || 'Unknown Artist',
+      albumArt: track.album.images[0]?.url || '',
       previewUrl: track.preview_url
     }));
   } catch (err) {
-    console.error('Spotify Search Error:', err.message);
+    console.error('Spotify Search API Error:', err.response?.data || err.message);
     return [];
   }
 }
 
-//Socket.io Event Handling
-io.on('connection', (socket) => {
-  console.log(`🔌 Connected: ${socket.id}`);
+async function playTrackOnHost(trackId) {
+  if (!hostDeviceId) {
+    console.warn('No host device registered — open /host.html and log in first.');
+    return;
+  }
+  try {
+    const accessToken = await spotifyAuth.refreshIfNeeded();
+    await axios.put(
+      `https://api.spotify.com/v1/me/player/play?device_id=${hostDeviceId}`,
+      { uris: [`spotify:track:${trackId}`] },
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+  } catch (err) {
+    console.error('Playback error:', err.response?.data || err.message);
+  }
+}
 
-  //Send initial room state upon joining
-  socket.emit('room-state-update', {
-    state: room.state,
-    prompt: room.prompt,
-    submissionsCount: room.submissions.length
+// HTTP Routes
+app.get('/login', (req, res) => {
+  res.redirect(spotifyAuth.getLoginUrl());
+});
+ 
+app.get('/callback', async (req, res) => {
+  const { code, error } = req.query;
+  if (error) return res.send(`Spotify login failed: ${error}`);
+  try {
+    await spotifyAuth.handleCallback(code);
+    res.redirect('/host.html');
+  } catch (err) {
+    console.error('Spotify callback error:', err.response?.data || err.message);
+    res.status(500).send('Login failed, check server logs.');
+  }
+});
+ 
+app.get('/host-token', async (req, res) => {
+  try {
+    if (!spotifyAuth.isLoggedIn()) return res.json({ error: 'not_logged_in' });
+    const accessToken = await spotifyAuth.refreshIfNeeded();
+    res.json({ accessToken });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Socket.io Event Handling
+io.on('connection', (socket) => {
+  console.log(`Connected: ${socket.id}`);
+
+  // Register Player
+  socket.on('join-game', (playerName) => {
+    room.scores[socket.id] = room.scores[socket.id] || { name: playerName, points: 0 };
+    console.log(`Player joined: ${playerName}`);
   });
 
-  //Handle Song Search
+  // Handle Song Search
   socket.on('search-song', async (data) => {
+    console.log(`Searching for: "${data.query}"`);
     const results = await searchSpotifyTrack(data.query);
+    console.log(`Found ${results.length} results.`);
     socket.emit('search-results', results);
   });
 
-  //Handle Song Submission (Guest)
+  // Handle Song Submission (Guest)
   socket.on('submit-song', (track) => {
-    //Prevent duplicate submissions from same connection
     const existingIndex = room.submissions.findIndex(s => s.socketId === socket.id);
     if (existingIndex !== -1) {
       room.submissions[existingIndex].track = track;
@@ -96,28 +168,46 @@ io.on('connection', (socket) => {
       room.submissions.push({ socketId: socket.id, track });
     }
 
-    console.log(`🎵 Song submitted: ${track.name} (Total: ${room.submissions.length})`);
-    
-    //Notify Unity & Web clients that submission count updated
+    console.log(`Song submitted: ${track.name} (Total: ${room.submissions.length})`);
     io.emit('submission-updated', { count: room.submissions.length });
+  });
 
-    //Auto-trigger battle state when 2 songs are ready
-    if (room.submissions.length >= 2 && room.state !== 'VOTING') {
-      startBattlePhase();
+  // Host starts round
+  socket.on('host-start-game', () => {
+    room.submissions = [];
+    room.votes = {};
+    room.state = "SUBMISSION";
+    
+    const prompt = room.prompts[room.currentPromptIndex];
+    console.log(`Starting round with prompt: "${prompt}"`);
+    io.emit('round-started', { prompt });
+  });
+
+  // Host triggers voting phase
+  socket.on('host-start-voting', () => {
+    room.state = 'VOTING';
+    const votingData = {
+      tracks: room.submissions.map((s, index) => ({ id: index, track: s.track }))
+    };
+
+    console.log('Voting phase started.');
+    io.emit('start-voting', votingData);
+
+    if (room.submissions.length > 0) {
+      playTrackOnHost(room.submissions[0].track.id);
     }
   });
 
-  //Handle Votes (Guest)
-  socket.on('cast-vote', (option) => { // 'A' or 'B'
+  // Handle Votes (Guest)
+  socket.on('cast-vote', (trackIndex) => {
     if (room.state !== 'VOTING') return;
-    if (room.votedPlayers.has(socket.id)) return; //Prevent double voting
+    room.votes[socket.id] = trackIndex;
+    console.log(`Vote received for track index ${trackIndex}`);
+  });
 
-    room.votedPlayers.add(socket.id);
-    if (option === 'A') room.votes.A++;
-    if (option === 'B') room.votes.B++;
-
-    console.log(`Vote for ${option}! Current tally: A=${room.votes.A}, B=${room.votes.B}`);
-    io.emit('vote-tally-update', room.votes);
+  socket.on('host-device-ready', (deviceId) => {
+    hostDeviceId = deviceId;
+    console.log('Host playback device registered:', deviceId);
   });
 
   socket.on('disconnect', () => {
@@ -125,21 +215,7 @@ io.on('connection', (socket) => {
   });
 });
 
-function startBattlePhase() {
-  room.state = 'VOTING';
-  room.votes = { A: 0, B: 0 };
-  room.votedPlayers.clear();
-
-  const battleData = {
-    songA: room.submissions[0].track,
-    songB: room.submissions[1].track
-  };
-
-  console.log('Battle Started:', battleData.songA.name, 'vs', battleData.songB.name);
-  io.emit('start-battle', battleData);
-}
-
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on https://127.0.0.1:${PORT}`);
 });
