@@ -1,4 +1,6 @@
 // server/spotifyAuth.js
+//https://127.0.0.1:3000/login
+
 const crypto = require('crypto');
 const axios = require('axios');
 

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Aux Battle - Main Screen</title>
+  <title>Bangers - Main Screen</title>
   <script src="/socket.io/socket.io.js"></script>
   <!-- Load Three.js via CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -39,7 +39,7 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     container.appendChild(renderer.domElement);
 
-    // Add a glowing 3D Cylinder (Vinyl Record metaphor)
+    // Glowing Record
     const geometry = new THREE.CylinderGeometry(3, 3, 0.2, 32);
     const material = new THREE.MeshBasicMaterial({ color: 0x1DB954, wireframe: true });
     const recordMesh = new THREE.Mesh(geometry, material);
@@ -51,12 +51,11 @@
     // Animation Loop
     function animate() {
       requestAnimationFrame(animate);
-      recordMesh.rotation.y += 0.01; // Spin record
+      recordMesh.rotation.y += 0.001;
       renderer.render(scene, camera);
     }
     animate();
 
-    // Adjust on resize
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
