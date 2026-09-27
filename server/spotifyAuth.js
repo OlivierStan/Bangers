@@ -1,5 +1,11 @@
 //https://level-laborious-reiterate.ngrok-free.dev/login
 
+//ngrok http https://127.0.0.1:3000
+//node index.js
+
+//https://level-laborious-reiterate.ngrok-free.dev/callback into .env
+//Run npm install -g ngrok
+
 const crypto = require('crypto');
 const axios = require('axios');
 
