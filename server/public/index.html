@@ -29,7 +29,7 @@
   <p id="promptText">Waiting for the game to start...</p>
 
   <!-- Submission View -->
-  <div id="submissionView">
+  <div id="submissionView" style="display: none;">
     <input type="text" id="searchInput" placeholder="Search song or artist..." autocomplete="off" />
     <div id="results" class="song-list"></div>
   </div>
@@ -51,7 +51,6 @@
     const playerName = prompt("Enter your name:") || "Player";
     socket.emit('join-game', playerName);
 
-    // Search input listener with debouncing
     let timeout = null;
     searchInput.addEventListener('input', () => {
       clearTimeout(timeout);
@@ -67,7 +66,7 @@
       }, 300);
     });
 
-    // Render search results from server
+    // Render search results
     socket.on('search-results', (tracks) => {
       resultsContainer.innerHTML = '';
       
@@ -99,7 +98,7 @@
       statusDiv.innerText = `Submitted: ${track.name}! Waiting for other players...`;
     }
 
-    // New Round Started
+    // New Round
     socket.on('round-started', (data) => {
       document.getElementById('promptText').innerText = data.prompt;
       submissionView.style.display = 'block';
@@ -109,7 +108,7 @@
       statusDiv.innerText = '';
     });
 
-    // Voting Phase Started
+    // Voting
     socket.on('start-voting', (data) => {
       submissionView.style.display = 'none';
       voteView.style.display = 'flex';
@@ -127,6 +126,13 @@
         };
         voteView.appendChild(btn);
       });
+    });
+
+    // Results
+    socket.on('round-results', () => {
+      voteView.style.display = 'none';
+      submissionView.style.display = 'none';
+      statusDiv.innerText = 'Round over! Look at the big screen for the results 🏆';
     });
   </script>
 </body>

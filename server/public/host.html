@@ -4,8 +4,11 @@
   <meta charset="UTF-8">
   <title>Bangers - Main Screen</title>
   <script src="/socket.io/socket.io.js"></script>
-  <!-- Load Three.js via CDN -->
+  <!-- Three.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- QR Codes -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
   <style>
     body { margin: 0; background: #121212; color: #fff; font-family: sans-serif; overflow: hidden; }
     #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
@@ -18,19 +21,93 @@
   <div id="canvas-container"></div>
   
   <div id="ui-overlay">
-    <h1 id="promptDisplay">Waiting for Host to Start...</h1>
-    <div id="status"></div>
-    <button id="startBtn" onclick="startGame()">Start Game</button>
+    <h1 id="promptDisplay">Bangers</h1>
+    
+    <!-- Category Selection UI -->
+    <div id="categorySelection" style="background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: left; display: inline-block;">
+      <h3 style="margin-top: 0;">Select Categories:</h3>
+      <label style="display: block; margin: 8px 0; cursor: pointer;">
+        <input type="checkbox" value="All" id="cat-all" checked onchange="toggleCategories()"> <strong>Play All Prompts (No Filter)</strong>
+      </label>
+      <hr style="border-color: #333;">
+      <div id="specific-categories" style="opacity: 0.5; pointer-events: none;">
+        <label style="display: block; margin: 8px 0; cursor: pointer;"><input type="checkbox" value="Title Game" class="cat-cb"> Title Game</label>
+        <label style="display: block; margin: 8px 0; cursor: pointer;"><input type="checkbox" value="Decade" class="cat-cb"> Genre</label>
+        <label style="display: block; margin: 8px 0; cursor: pointer;"><input type="checkbox" value="Decade" class="cat-cb"> Decade</label>
+        <label style="display: block; margin: 8px 0; cursor: pointer;"><input type="checkbox" value="Lyrics" class="cat-cb"> Lyrics</label>
+        <label style="display: block; margin: 8px 0; cursor: pointer;"><input type="checkbox" value="World" class="cat-cb"> World</label>
+        <label style="display: block; margin: 8px 0; cursor: pointer;"><input type="checkbox" value="Wildcard" class="cat-cb"> Wildcard</label>
+        <label style="display: block; margin: 8px 0; cursor: pointer;"><input type="checkbox" value="By Artist" class="cat-cb"> By Artist</label>
+        <label style="display: block; margin: 8px 0; cursor: pointer;"><input type="checkbox" value="Pop Culture" class="cat-cb"> Pop Culture</label>
+      </div>
+    </div>
+
+    <div id="status">Waiting for host to configure game...</div>
+    <button id="startBtn" onclick="startGame(true)">Start Game</button>
     <button id="voteBtn" class="hidden" onclick="startVoting()">Proceed to Voting</button>
     <button id="endVoteBtn" class="hidden" onclick="endVoting()">Show Results</button>
-<button id="nextRoundBtn" class="hidden" onclick="startGame()">Next Round</button>
+    <button id="nextRoundBtn" class="hidden" onclick="startGame(false)">Next Round</button>
+  </div>
+  <div id="qr-container" style="position: absolute; bottom: 30px; right: 30px; background: white; padding: 15px; border-radius: 12px; z-index: 10; text-align: center;">
+    <div id="qrcode"></div>
+    <p style="color: black; margin: 10px 0 0 0; font-size: 0.9rem; font-weight: bold;">Scan to Join</p>
   </div>
 
-  <script src="https://sdk.scdn.co/spotify-player.js"></script>
   <script>
     const socket = io();
 
-    // --- THREE.JS BACKGROUND SCENE SETUP ---
+    // Generate QR Code
+    const joinUrl = window.location.origin; // Automatically gets https://127.0.0.1:3000 or your future live domain
+    new QRCode(document.getElementById("qrcode"), {
+      text: joinUrl,
+      width: 150,
+      height: 150,
+      colorDark: "#121212",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.H
+    });
+  </script>
+
+  <script>
+    window.onSpotifyWebPlaybackSDKReady = () => {
+      const player = new Spotify.Player({
+        name: 'Bangers Host Player',
+        getOAuthToken: cb => {
+          fetch('/host-token')
+            .then(res => res.json())
+            .then(data => {
+              if (data.accessToken) {
+                cb(data.accessToken);
+              } else {
+                console.warn('Host not logged in. Redirecting to /login...');
+                window.location.href = '/login';
+              }
+            })
+            .catch(err => console.error('Token fetch error:', err));
+        },
+        volume: 0.8
+      });
+
+      // When ready, send device ID to Node server
+      player.addListener('ready', ({ device_id }) => {
+        console.log('Spotify Host Player Ready with Device ID:', device_id);
+        socket.emit('host-device-ready', device_id);
+      });
+
+      player.addListener('not_ready', ({ device_id }) => {
+        console.log('Device ID has gone offline', device_id);
+      });
+
+      player.connect();
+    };
+  </script>
+
+  <!-- Load Spotify SDK -->
+  <script src="https://sdk.scdn.co/spotify-player.js"></script>
+
+  <!-- Game Logic & Three.js -->
+  <script>
+    // --- THREE.JS ---
     const container = document.getElementById('canvas-container');
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -39,7 +116,7 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     container.appendChild(renderer.domElement);
 
-    // Glowing Record
+    // Record
     const geometry = new THREE.CylinderGeometry(3, 3, 0.2, 32);
     const material = new THREE.MeshBasicMaterial({ color: 0x1DB954, wireframe: true });
     const recordMesh = new THREE.Mesh(geometry, material);
@@ -62,10 +139,31 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // --- GAME EVENT HANDLERS ---
-    function startGame() {
-      socket.emit('host-start-game');
+    // --- GAME EVENT ---
+    function toggleCategories() {
+      const isAllChecked = document.getElementById('cat-all').checked;
+      const specificContainer = document.getElementById('specific-categories');
+      // Dim and disable individual categories if "All" is selected
+      specificContainer.style.opacity = isAllChecked ? '0.5' : '1';
+      specificContainer.style.pointerEvents = isAllChecked ? 'none' : 'auto';
+    }
+
+    function startGame(isFirstRound = false) {
+      let selectedCategories = [];
+      
+      if (isFirstRound) {
+        if (document.getElementById('cat-all').checked) {
+          selectedCategories.push("All");
+        } else {
+          document.querySelectorAll('.cat-cb:checked').forEach(cb => selectedCategories.push(cb.value));
+        }
+        
+        document.getElementById('categorySelection').classList.add('hidden');
+      }
+
+      socket.emit('host-start-game', { isFirstRound, categories: selectedCategories });
       document.getElementById('startBtn').classList.add('hidden');
+      document.getElementById('nextRoundBtn').classList.add('hidden');
     }
 
     function startVoting() {
@@ -85,35 +183,33 @@
       }
     });
 
-    socket.on('round-results', (data) => {
-      document.getElementById('promptDisplay').innerText = "Round Results!";
-      document.getElementById('status').innerText = "Scores updated on phones!";
-    });
-
     function endVoting() {
-    socket.emit('host-end-voting');
-    document.getElementById('endVoteBtn').classList.add('hidden');
-  }
+      socket.emit('host-end-voting');
+      document.getElementById('endVoteBtn').classList.add('hidden');
+    }
 
-  // Handle voting state on host
-  socket.on('start-voting', (data) => {
-    document.getElementById('status').innerText = "Players are voting...";
-    document.getElementById('endVoteBtn').classList.remove('hidden');
-  });
-
-  // Display results on host screen
-  socket.on('round-results', (data) => {
-    document.getElementById('promptDisplay').innerText = "Round Leaderboard";
     
-    // Format leaderboard
-    let leaderText = "Scores:\n";
-    Object.values(data.scores).forEach(p => {
-      leaderText += `${p.name}: ${p.points} pts | `;
+    socket.on('start-voting', (data) => {
+      document.getElementById('status').innerText = "Players are voting...";
+      document.getElementById('endVoteBtn').classList.remove('hidden');
     });
+
     
-    document.getElementById('status').innerText = leaderText;
-    document.getElementById('nextRoundBtn').classList.remove('hidden');
-  });
+    socket.on('round-results', (data) => {
+      document.getElementById('promptDisplay').innerText = "🏆 Round Leaderboard 🏆";
+      
+      let scoreboardHTML = '<div style="font-size: 1.5rem; text-align: left; display: inline-block; background: #222; padding: 20px; border-radius: 12px; margin-top: 20px;">';
+      
+      const sortedPlayers = Object.values(data.scores).sort((a, b) => b.points - a.points);
+      sortedPlayers.forEach((p, index) => {
+        scoreboardHTML += `<p style="margin: 10px 0;"><strong>#${index + 1}</strong> ${p.name} &mdash; <span style="color: #1DB954;">${p.points} pts</span></p>`;
+      });
+      
+      scoreboardHTML += '</div>';
+      
+      document.getElementById('status').innerHTML = scoreboardHTML;
+      document.getElementById('nextRoundBtn').classList.remove('hidden');
+    });
   </script>
 </body>
 </html>
