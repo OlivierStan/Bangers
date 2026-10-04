@@ -1,0 +1,55 @@
+:root { --green: #1DB954; --panel: rgba(18, 18, 18, 0.85); --muted: #b3b3b3; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #121212; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
+#canvas-container { position: absolute; inset: 0; z-index: 1; }
+
+/* The overlay itself lets clicks through to nothing, but everything inside it is interactive */
+#ui-overlay { position: relative; z-index: 2; height: 100vh; overflow-y: auto; text-align: center; padding: 40px 220px 40px 40px; }
+
+h1#promptDisplay { font-size: 3rem; margin: 10px 0 6px; text-shadow: 0 2px 20px rgba(0,0,0,0.8); }
+#roundBadge { color: var(--green); font-weight: bold; letter-spacing: 2px; text-transform: uppercase; font-size: 0.9rem; min-height: 1.2em; }
+#status { font-size: 1.3rem; margin: 16px 0; color: var(--muted); }
+
+.panel { background: var(--panel); padding: 20px 24px; border-radius: 14px; margin: 16px auto; max-width: 900px; }
+.panel h3 { margin: 0 0 14px; }
+
+button { padding: 14px 28px; font-size: 1.1rem; font-weight: bold; cursor: pointer; border: none; border-radius: 999px; background: var(--green); color: #000; margin: 6px; }
+button:hover:not(:disabled) { filter: brightness(1.1); }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.secondary { background: #333; color: #fff; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.chip { padding: 10px 18px; border-radius: 999px; background: #282828; border: 2px solid transparent; font-size: 1rem; user-select: none; }
+.chip.toggle { cursor: pointer; }
+.chip.selected { border-color: var(--green); background: rgba(29, 185, 84, 0.2); }
+.chip.done { background: var(--green); color: #000; font-weight: bold; }
+.chip.offline { opacity: 0.4; text-decoration: line-through; }
+
+.tracks { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
+.track { background: #181818; border-radius: 10px; padding: 12px; text-align: left; }
+.track img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; background: #333; }
+.track .t-name { font-weight: bold; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.track .t-artist { color: var(--muted); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.track .t-meta { color: var(--green); font-size: 0.85rem; margin-top: 4px; }
+
+.winner { display: flex; gap: 24px; align-items: center; text-align: left; }
+.winner img { width: 180px; height: 180px; object-fit: cover; border-radius: 10px; background: #333; }
+.winner .w-name { font-size: 2rem; font-weight: bold; }
+.winner .w-artist { font-size: 1.2rem; color: var(--muted); }
+.winner .w-by { font-size: 1.2rem; margin-top: 12px; }
+
+.leaderboard { text-align: left; font-size: 1.3rem; }
+.leaderboard .row { display: flex; justify-content: space-between; padding: 8px 4px; border-bottom: 1px solid #333; }
+.leaderboard .row:last-child { border-bottom: none; }
+.leaderboard .pts { color: var(--green); font-weight: bold; }
+.leaderboard .row.offline { opacity: 0.4; }
+.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 900px; margin: 0 auto; }
+.columns .panel { margin: 0; }
+
+#spotifyStatus { position: absolute; top: 16px; left: 16px; z-index: 10; font-size: 0.85rem; background: var(--panel); padding: 8px 14px; border-radius: 999px; }
+#spotifyStatus a { color: var(--green); font-weight: bold; }
+
+#qr-container { position: absolute; bottom: 30px; right: 30px; background: white; padding: 15px; border-radius: 12px; z-index: 10; text-align: center; }
+#qr-container p { color: black; margin: 10px 0 0; font-size: 0.9rem; font-weight: bold; }
+
+.hidden { display: none !important; }

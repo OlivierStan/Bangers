@@ -1,0 +1,27 @@
+* { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+body { background: #121212; color: #fff; margin: 0; padding: 20px 16px 40px; text-align: center; }
+h1 { color: #1DB954; font-size: 1.8rem; margin: 0 0 5px; }
+h2 { font-size: 1.3rem; margin: 10px 0; }
+p { color: #b3b3b3; font-size: 0.95rem; }
+input { width: 100%; padding: 14px; border-radius: 8px; border: none; font-size: 1rem; margin-top: 15px; background: #222; color: #fff; }
+button { width: 100%; padding: 16px; font-size: 1rem; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; color: #000; background: #1DB954; margin-top: 15px; }
+button.secondary { background: #333; color: #fff; }
+
+.song-list { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+.song-card { display: flex; align-items: center; background: #181818; padding: 10px; border-radius: 8px; cursor: pointer; text-align: left; border: 2px solid transparent; }
+.song-card:active { background: #282828; }
+.song-card img { width: 50px; height: 50px; border-radius: 4px; margin-right: 12px; object-fit: cover; background: #333; flex-shrink: 0; }
+.song-info { flex: 1; overflow: hidden; }
+.song-title { font-weight: bold; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.song-artist { color: #b3b3b3; font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.song-card.selected { border-color: #1DB954; background: rgba(29, 185, 84, 0.15); }
+.song-card.own { opacity: 0.45; cursor: default; }
+.tag { font-size: 0.75rem; color: #1DB954; font-weight: bold; margin-left: 8px; flex-shrink: 0; }
+
+.big-card { background: #181818; border-radius: 12px; padding: 16px; margin-top: 20px; }
+.big-card img { width: 160px; height: 160px; object-fit: cover; border-radius: 8px; background: #333; }
+
+#promptText { color: #fff; font-size: 1.2rem; font-weight: bold; }
+#status { margin-top: 20px; font-weight: bold; color: #1DB954; }
+#connection { position: fixed; top: 0; left: 0; right: 0; background: #c0392b; color: #fff; padding: 6px; font-size: 0.85rem; }
+.hidden { display: none !important; }

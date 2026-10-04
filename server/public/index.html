@@ -2,138 +2,49 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="theme-color" content="#121212">
   <title>Bangers - Guest Phone</title>
+  <link rel="stylesheet" href="/css/guest.css">
   <script src="/socket.io/socket.io.js"></script>
-  <style>
-    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-    body { background: #121212; color: #fff; margin: 0; padding: 20px; text-align: center; }
-    h1 { color: #1DB954; font-size: 1.8rem; margin-bottom: 5px; }
-    p { color: #b3b3b3; font-size: 0.9rem; }
-    input { width: 100%; padding: 14px; border-radius: 8px; border: none; font-size: 1rem; margin-top: 15px; background: #222; color: #fff; }
-    .song-list { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
-    .song-card { display: flex; align-items: center; background: #181818; padding: 10px; border-radius: 8px; cursor: pointer; text-align: left; }
-    .song-card img { width: 50px; height: 50px; border-radius: 4px; margin-right: 12px; object-fit: cover; }
-    .song-info { flex: 1; overflow: hidden; }
-    .song-title { font-weight: bold; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .song-artist { color: #b3b3b3; font-size: 0.8rem; }
-    
-    .vote-container { display: none; flex-direction: column; gap: 15px; margin-top: 25px; }
-    .btn-vote { padding: 16px; font-size: 1rem; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; color: white; background: #1DB954; }
-    #status { margin-top: 20px; font-weight: bold; color: #1DB954; }
-  </style>
+  <script type="module" src="/js/guest/main.js"></script>
 </head>
 <body>
 
+  <div id="connection" class="hidden">Reconnecting…</div>
+
   <h1>Bangers</h1>
-  <p id="promptText">Waiting for the game to start...</p>
+  <p id="promptText"></p>
+
+  <!-- Join View -->
+  <form id="joinView" class="hidden">
+    <p>Enter your name to join the party</p>
+    <input type="text" id="nameInput" placeholder="Your name" maxlength="20" autocomplete="off" required />
+    <button type="submit">Join</button>
+  </form>
 
   <!-- Submission View -->
-  <div id="submissionView" style="display: none;">
-    <input type="text" id="searchInput" placeholder="Search song or artist..." autocomplete="off" />
+  <div id="submissionView" class="hidden">
+    <input type="search" id="searchInput" placeholder="Search song or artist..." autocomplete="off" />
     <div id="results" class="song-list"></div>
   </div>
 
+  <!-- Submitted View -->
+  <div id="submittedView" class="hidden">
+    <div id="submittedCard" class="big-card"></div>
+    <button id="changeSongBtn" class="secondary">Change song</button>
+  </div>
+
   <!-- Voting View -->
-  <div id="voteView" class="vote-container"></div>
+  <div id="voteView" class="hidden">
+    <div id="voteList" class="song-list"></div>
+  </div>
+
+  <!-- Results View -->
+  <div id="resultsView" class="hidden">
+    <div id="resultsCard" class="big-card"></div>
+  </div>
 
   <div id="status"></div>
-
-  <script>
-    const socket = io();
-    const searchInput = document.getElementById('searchInput');
-    const resultsContainer = document.getElementById('results');
-    const statusDiv = document.getElementById('status');
-    const submissionView = document.getElementById('submissionView');
-    const voteView = document.getElementById('voteView');
-
-    // Register player name on connect
-    const playerName = prompt("Enter your name:") || "Player";
-    socket.emit('join-game', playerName);
-
-    let timeout = null;
-    searchInput.addEventListener('input', () => {
-      clearTimeout(timeout);
-      const query = searchInput.value.trim();
-      
-      if (query.length < 2) {
-        resultsContainer.innerHTML = '';
-        return;
-      }
-      
-      timeout = setTimeout(() => {
-        socket.emit('search-song', { query });
-      }, 300);
-    });
-
-    // Render search results
-    socket.on('search-results', (tracks) => {
-      resultsContainer.innerHTML = '';
-      
-      if (!tracks || tracks.length === 0) {
-        resultsContainer.innerHTML = '<p>No songs found.</p>';
-        return;
-      }
-
-      tracks.forEach(track => {
-        const card = document.createElement('div');
-        card.className = 'song-card';
-        card.innerHTML = `
-          <img src="${track.albumArt || ''}" alt="cover" />
-          <div class="song-info">
-            <div class="song-title">${track.name}</div>
-            <div class="song-artist">${track.artist}</div>
-          </div>
-        `;
-        card.onclick = () => selectSong(track);
-        resultsContainer.appendChild(card);
-      });
-    });
-
-    function selectSong(track) {
-      socket.emit('submit-song', track);
-      resultsContainer.innerHTML = '';
-      searchInput.value = '';
-      submissionView.style.display = 'none';
-      statusDiv.innerText = `Submitted: ${track.name}! Waiting for other players...`;
-    }
-
-    // New Round
-    socket.on('round-started', (data) => {
-      document.getElementById('promptText').innerText = data.prompt;
-      submissionView.style.display = 'block';
-      voteView.style.display = 'none';
-      resultsContainer.innerHTML = '';
-      searchInput.value = '';
-      statusDiv.innerText = '';
-    });
-
-    // Voting
-    socket.on('start-voting', (data) => {
-      submissionView.style.display = 'none';
-      voteView.style.display = 'flex';
-      voteView.innerHTML = '';
-      statusDiv.innerText = 'Listen to the tracks and cast your vote!';
-
-      data.tracks.forEach((item) => {
-        const btn = document.createElement('button');
-        btn.className = 'btn-vote';
-        btn.innerText = `Vote for: ${item.track.name} (${item.track.artist})`;
-        btn.onclick = () => {
-          socket.emit('cast-vote', item.id);
-          voteView.style.display = 'none';
-          statusDiv.innerText = 'Vote locked in!';
-        };
-        voteView.appendChild(btn);
-      });
-    });
-
-    // Results
-    socket.on('round-results', () => {
-      voteView.style.display = 'none';
-      submissionView.style.display = 'none';
-      statusDiv.innerText = 'Round over! Look at the big screen for the results 🏆';
-    });
-  </script>
 </body>
 </html>
